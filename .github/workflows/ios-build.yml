@@ -1,0 +1,81 @@
+name: iOS App Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/ios/**'
+      - 'apps/shared/ClawdbotKit/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    paths:
+      - 'apps/ios/**'
+      - 'apps/shared/ClawdbotKit/**'
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  build-ios:
+    runs-on: macos-14 # Latest macOS runner with Xcode 16
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Install dependencies
+        run: |
+          brew install xcodegen swiftformat swiftlint
+      
+      - name: Generate Xcode project
+        working-directory: apps/ios
+        run: |
+          xcodegen generate
+      
+      - name: Build iOS app
+        working-directory: apps/ios
+        run: |
+          xcodebuild clean build \
+            -project Clawdbot.xcodeproj \
+            -scheme Clawdbot \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      
+      - name: Create unsigned IPA
+        working-directory: apps/ios
+        run: |
+          # Create Payload directory
+          mkdir -p Payload
+          
+          # Find and copy the .app bundle
+          APP_PATH=$(find DerivedData -name "Clawdbot.app" | head -1)
+          cp -r "$APP_PATH" Payload/
+          
+          # Create IPA (it's just a ZIP)
+          zip -r Clawdbot-unsigned.ipa Payload
+          
+          # Cleanup
+          rm -rf Payload
+      
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clawdbot-iOS-unsigned
+          path: apps/ios/Clawdbot-unsigned.ipa
+          retention-days: 30
+      
+      - name: Build info
+        run: |
+          echo "✅ iOS app built successfully!"
+          echo "📦 Artifact: Clawdbot-unsigned.ipa"
+          echo "⚠️  This is an UNSIGNED build - you'll need to sideload it with AltStore or similar"
+          echo ""
+          echo "To install:"
+          echo "1. Download the artifact from Actions tab"
+          echo "2. Use AltStore/Sideloadly/TrollStore to install on your iPhone"
+          echo "3. Or use Xcode to sign and install (requires Mac)"
